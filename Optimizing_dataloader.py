@@ -141,7 +141,53 @@ def experiment_workers(num_workers, trainset, device):
     return result
 
 
+# ── Experiment batch size ────────────────────────────────────────────
+
+def experiment_batch_sizes(batch_sizes_to_test, trainset, device):
+    """
+      Measures the data loading time for different batch sizes.
+
+      Args:
+          batch_sizes_to_test: A list of integers representing the batch sizes to test.
+          trainset: The dataset to be loaded.
+          device: The device to which the data will be moved (e.g., 'cpu' or 'cuda').
+      """
+
+    print(f"\n{'─' * 50}")
+    print(f"  Testing batch_size = {batch_sizes_to_test}")
+    print(f"{'─' * 50}")
+
+    # Create a new DataLoader instance for each specific test
+    loader = DataLoader(
+        trainset,
+        batch_size=batch_sizes_to_test,  # set the value to the current value in the top
+        shuffle=True,
+        num_workers=8,
+        pin_memory=True,
+        persistent_workers=True
+    )
+    # Handle potential runtime errors, especially out-of-memory
+    try:
+        # Time the data loading for one epoch and save it to the dictionary
+        batch_size_times = measure_average_epoch_time(loader, device)
+    except RuntimeError as e:
+        # If an error occurs (often from running out of GPU memory)
+        batch_size_times = float('inf')
+    finally:
+        # Clean up the loader and call the garbage collector to free up memory
+        # ensuring each test runs in a clean environment.
+        del loader
+        gc.collect()
+        # Clear the PyTorch CUDA cache to free up GPU memory.
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    return batch_size_times
+
+
 # ── Experiment runner with caching ────────────────────────────────────────────
+
+
 def run_experiment(
     experiment_name,
     experiment_fcn,
@@ -228,19 +274,44 @@ if __name__ == "__main__":
     trainset, testset = download_and_load_cifar10()
 
     workers_to_test = [0, 2, 4, 6, 8, 10]
+    # Define the list of batch_size values to test
+    batch_sizes_to_test = [16, 32, 64, 128, 256, 512]
 
-    worker_times = run_experiment(
-        experiment_name="worker_times",
-        experiment_fcn=experiment_workers,
-        cases=workers_to_test,
+    # worker_times = run_experiment(
+    #     experiment_name="worker_times",
+    #     experiment_fcn=experiment_workers,
+    #     cases=workers_to_test,
+    #     trainset=trainset,
+    #     device=device,
+    #     rerun=False,  # <- set True to force a fresh run and overwrite cache
+    # )
+
+    # plot_performance_summary(
+    #     worker_times,
+    #     title="DataLoader Performance vs. num_workers",
+    #     xlabel="Number of Workers",
+    #     ylabel="Average Time per Epoch (ms)",
+    # )
+
+    # Run the experiment to measure the data loading time for different batch sizes.
+    batch_size_times = run_experiment(
+        # A unique name for this experiment, used as the filename for the cached results.
+        experiment_name="batch_size_times",
+        # The actual function that contains the experiment's logic.
+        experiment_fcn=experiment_batch_sizes,
+        # The parameters to iterate over; in this case, a list of different batch sizes.
+        cases=batch_sizes_to_test,
+        # The dataset required by the experiment function.
         trainset=trainset,
+        # The computation device (e.g., 'cpu' or 'cuda') to be used.
         device=device,
-        rerun=False,  # <- set True to force a fresh run and overwrite cache
+        # If False, the function will load results from the cache if they exist.
+        # If True, it will force the experiment to run again and overwrite any old results.
+        rerun=True
     )
-
     plot_performance_summary(
-        worker_times,
-        title="DataLoader Performance vs. num_workers",
-        xlabel="Number of Workers",
-        ylabel="Average Time per Epoch (ms)",
+        batch_size_times,
+        title="DataLoader Performance vs. batch_size",
+        xlabel="Batch Sizes",
+        ylabel="Average Time per Epoch (milliseconds)",
     )
