@@ -184,9 +184,46 @@ def experiment_batch_sizes(batch_sizes_to_test, trainset, device):
 
     return batch_size_times
 
+# ── Experiment Prefetch_factor ────────────────────────────────────────────
+
+
+def experiment_prefetch_factor(prefetch_factors_to_test, trainset, device):
+    """
+    Measures the data loading time for different prefetch factor settings.
+
+    Args:
+        prefetch_factors_to_test: A list of integers representing the prefetch factors to test.
+        trainset: The dataset to be loaded.
+        device: The device to which the data will be moved (e.g., 'cpu' or 'cuda').
+    """
+    print(f"\n{'─' * 50}")
+    print(f"  Testing prefetch_factor = {prefetch_factors_to_test}")
+    print(f"{'─' * 50}")
+
+    # Create a new Dataloader instance for each specific test
+    loader = DataLoader(
+        trainset,
+        batch_size=512,
+        shuffle=True,
+        num_workers=8,
+        pin_memory=True,
+        persistent_workers=prefetch_factors_to_test
+    )
+    # Handle potential run time errors, especially out-of-memory
+    try:
+        prefetch_factor_times = measure_average_epoch_time(loader, device)
+    except RuntimeError as e:
+        batch_size_times = float('inf')
+    finally:
+        del loader
+        gc.collect()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    return prefetch_factor_times
+
 
 # ── Experiment runner with caching ────────────────────────────────────────────
-
 
 def run_experiment(
     experiment_name,
@@ -277,6 +314,9 @@ if __name__ == "__main__":
     # Define the list of batch_size values to test
     batch_sizes_to_test = [16, 32, 64, 128, 256, 512]
 
+    # Define the list of prefetch_factor values to test
+    prefetch_factors_to_test = [2, 4, 6, 8, 10, 12]
+
     # worker_times = run_experiment(
     #     experiment_name="worker_times",
     #     experiment_fcn=experiment_workers,
@@ -293,14 +333,37 @@ if __name__ == "__main__":
     #     ylabel="Average Time per Epoch (ms)",
     # )
 
+    # # Run the experiment to measure the data loading time for different batch sizes.
+    # batch_size_times = run_experiment(
+    #     # A unique name for this experiment, used as the filename for the cached results.
+    #     experiment_name="batch_size_times",
+    #     # The actual function that contains the experiment's logic.
+    #     experiment_fcn=experiment_batch_sizes,
+    #     # The parameters to iterate over; in this case, a list of different batch sizes.
+    #     cases=batch_sizes_to_test,
+    #     # The dataset required by the experiment function.
+    #     trainset=trainset,
+    #     # The computation device (e.g., 'cpu' or 'cuda') to be used.
+    #     device=device,
+    #     # If False, the function will load results from the cache if they exist.
+    #     # If True, it will force the experiment to run again and overwrite any old results.
+    #     rerun=True
+    # )
+    # plot_performance_summary(
+    #     batch_size_times,
+    #     title="DataLoader Performance vs. batch_size",
+    #     xlabel="Batch Sizes",
+    #     ylabel="Average Time per Epoch (milliseconds)",
+    # )
+
     # Run the experiment to measure the data loading time for different batch sizes.
-    batch_size_times = run_experiment(
+    prefetch_factor_times = run_experiment(
         # A unique name for this experiment, used as the filename for the cached results.
-        experiment_name="batch_size_times",
+        experiment_name="prefetch_factor_times",
         # The actual function that contains the experiment's logic.
-        experiment_fcn=experiment_batch_sizes,
+        experiment_fcn=experiment_prefetch_factor,
         # The parameters to iterate over; in this case, a list of different batch sizes.
-        cases=batch_sizes_to_test,
+        cases=prefetch_factors_to_test,
         # The dataset required by the experiment function.
         trainset=trainset,
         # The computation device (e.g., 'cpu' or 'cuda') to be used.
@@ -310,8 +373,8 @@ if __name__ == "__main__":
         rerun=True
     )
     plot_performance_summary(
-        batch_size_times,
-        title="DataLoader Performance vs. batch_size",
-        xlabel="Batch Sizes",
+        prefetch_factor_times,
+        title="DataLoader Performance vs. prefetch_factor",
+        xlabel="Prefetch Factor",
         ylabel="Average Time per Epoch (milliseconds)",
     )
